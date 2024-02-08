@@ -372,12 +372,29 @@ describe('modules/manager/gomod/update', () => {
       expect(res).toContain('k8s.io/client-go/v2 => k8s.io/client-go v2.2.2');
     });
 
-    it('should return null for replacement', () => {
-      const res = updateDependency({
-        fileContent: '',
-        upgrade: { updateType: 'replacement' },
-      });
-      expect(res).toBeNull();
+    it('should perform a replacement', () => {
+      const fileContent = `
+      go 1.18
+      require (
+        github.com/go-playground/webhooks/v6 v6.2.0
+      )`;
+      const upgrade = {
+        managerData: {"lineNumber": 3, multiLine: true},
+        datasource: "go",
+        depName: "github.com/go-playground/webhooks/v6",
+        displayPending: "",
+        fixedVersion: "v6.2.0",
+        currentVersion: "v6.2.0",
+        currentValue: "v6.2.0",
+        newValue: "v6.2.0",
+        newName: "github.com/xnok/webhooks/v6",
+        packageFile: "go.mod",
+        updateType: "replacement" as UpdateType,
+        packageName: "github.com/go-playground/webhooks/v6"
+      };
+      const res = updateDependency({ fileContent, upgrade });
+      expect(res).not.toEqual(fileContent);
+      expect(res).toContain("github.com/xnok/webhooks/v6 v6.2.0");
     });
 
     it('should perform indirect upgrades when top-level', () => {

@@ -17,15 +17,12 @@ export function updateDependency({
 }: UpdateDependencyConfig): string | null {
   try {
     logger.debug(`gomod.updateDependency: ${upgrade.newValue}`);
-    const { depName, depType, updateType } = upgrade;
-    if (updateType === 'replacement') {
-      logger.warn('gomod manager does not support replacement updates yet');
-      return null;
-    }
+    const { depName, depType } = upgrade;
     // istanbul ignore if: should never happen
     if (!depName || !upgrade.managerData) {
       return null;
     }
+
     const depNameNoVersion = getDepNameWithNoVersion(depName);
     const lines = fileContent.split(newlineRegex);
     // istanbul ignore if: hard to test
@@ -34,6 +31,16 @@ export function updateDependency({
       return null;
     }
     const lineToChange = lines[upgrade.managerData.lineNumber];
+
+    if (upgrade.updateType === 'replacement') {
+      logger.warn('gomod manager does not support replacement updates yet');
+
+      const newLine = lineToChange.replace(depName, `${upgrade.newName}`);
+
+      lines[upgrade.managerData.lineNumber] = newLine;
+      return lines.join('\n');
+    }
+
     if (
       !lineToChange.includes(depNameNoVersion) &&
       !lineToChange.includes('rethinkdb/rethinkdb-go.v5')
@@ -44,6 +51,7 @@ export function updateDependency({
       );
       return null;
     }
+
     let updateLineExp: RegExp | undefined;
 
     if (depType === 'golang') {

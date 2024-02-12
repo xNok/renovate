@@ -23,6 +23,7 @@ import type {
   UpdateArtifact,
   UpdateArtifactsConfig,
   UpdateArtifactsResult,
+  Upgrade,
 } from '../types';
 
 const { major, valid } = semver;
@@ -62,6 +63,48 @@ function getUpdateImportPathCmds(
     .map(
       ({ depName, newMajor }) =>
         `mod upgrade --mod-name=${depName} -t=${newMajor}`,
+    );
+
+  if (updateImportCommands.length > 0) {
+    let installMarwanModArgs =
+      'install github.com/marwan-at-work/mod/cmd/mod@latest';
+    const gomodModCompatibility = constraints?.gomodMod;
+    if (gomodModCompatibility) {
+      if (
+        gomodModCompatibility.startsWith('v') &&
+        isValid(gomodModCompatibility.replace(regEx(/^v/), ''))
+      ) {
+        installMarwanModArgs = installMarwanModArgs.replace(
+          regEx(/@latest$/),
+          `@${gomodModCompatibility}`,
+        );
+      } else {
+        logger.debug(
+          { gomodModCompatibility },
+          'marwan-at-work/mod compatibility range is not valid - skipping',
+        );
+      }
+    } else {
+      logger.debug(
+        'No marwan-at-work/mod compatibility range found - installing marwan-at-work/mod latest',
+      );
+    }
+    updateImportCommands.unshift(`go ${installMarwanModArgs}`);
+  }
+
+  return updateImportCommands;
+}
+
+function getReplaceImportPathCmds(
+  updatedDeps: Upgrade[],
+  { constraints }: UpdateArtifactsConfig,
+): string[] {
+  // Check if we fail to parse any major versions and log that they're skipped
+
+  const updateImportCommands = updatedDeps
+    .map(
+      ({ depName, newName }) =>
+        `mod replace --mod-old=${depName} --mod-new=${newName}`,
     );
 
   if (updateImportCommands.length > 0) {
@@ -253,6 +296,20 @@ export async function updateArtifacts({
       }
     }
 
+    // Update import paths on replacement updates
+    const isImportPathReplacementRequired =
+      config.postUpdateOptions?.includes('gomodUpdateImportPaths') &&
+      config.updateType === 'replacement';
+
+    if (isImportPathReplacementRequired) {
+      const updateImportCmds = getReplaceImportPathCmds(updatedDeps, config);
+      if (updateImportCmds.length > 0) {
+        logger.debug(updateImportCmds, 'update import path commands included');
+        // The updates
+        execCommands.push(...updateImportCmds);
+      }
+    }
+
     const mustSkipGoModTidy =
       !config.postUpdateOptions?.includes('gomodUpdateImportPaths') &&
       config.updateType === 'major';
@@ -273,6 +330,7 @@ export async function updateArtifacts({
       (config.postUpdateOptions?.includes('gomodTidy') === true ||
         config.postUpdateOptions?.includes('gomodTidy1.17') === true ||
         config.postUpdateOptions?.includes('gomodTidyE') === true ||
+        isImportPathReplacementRequired === true ||
         (config.updateType === 'major' && isImportPathUpdateRequired));
     if (isGoModTidyRequired) {
       args = 'mod tidy' + tidyOpts;
@@ -321,7 +379,7 @@ export async function updateArtifacts({
     }
 
     // Include all the .go file import changes
-    if (isImportPathUpdateRequired) {
+    if (isImportPathUpdateRequired === true || isImportPathReplacementRequired === true) {
       logger.debug('Returning updated go source files for import path changes');
       for (const f of status.modified) {
         if (f.endsWith('.go')) {
